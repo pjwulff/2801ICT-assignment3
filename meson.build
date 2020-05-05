@@ -16,5 +16,5 @@ project(
 
 executable(
     'k-short',
-    's5169483_ k_shortest_paths.cpp',
+    's5169483_k_shortest_paths.cpp',
     install: true)

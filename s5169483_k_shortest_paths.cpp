@@ -11,14 +11,15 @@ struct Vertex;
 
 struct Edge {
 	double weight;
-	Vertex *from;
-	Vertex *to;
+	size_t from;
+	size_t to;
 };
 
 struct Vertex {
-	std::vector<Edge *> forwards;
-	std::vector<Edge *> backwards;
+	std::vector<size_t> forwards;
+	std::vector<size_t> backwards;
 	double shortest_path;
+	size_t next;
 };
 
 struct Graph {
@@ -27,10 +28,9 @@ struct Graph {
 };
 
 struct QueueElement {
-	Vertex *vertex;
+	size_t vertex;
 	double priority;
 	double path_cost;
-	Vertex *parent;
 	bool operator<(QueueElement const &other) const {
 		return priority > other.priority;
 	}
@@ -46,7 +46,8 @@ read_graph_from_file(std::fstream &file)
 	std::vector<Edge> &edges = graph.edges;
 	file >> num_vertices;
 	file >> num_edges;
-	graph.vertices = std::vector<Vertex>(num_vertices, {{}, {}, INFINITY});
+	Vertex initial_vertex = {{}, {}, INFINITY, 0};
+	graph.vertices = std::vector<Vertex>(num_vertices, initial_vertex);
 	graph.edges.reserve(num_edges);
 	for (size_t i = 0; i < num_edges; ++i) {
 		size_t from, to;
@@ -54,9 +55,9 @@ read_graph_from_file(std::fstream &file)
 		file >> from;
 		file >> to;
 		file >> weight;
-		edges[i] = {weight, &vertices[from], &vertices[to]};
-		vertices[from].forwards.push_back(&edges[i]);
-		vertices[to].backwards.push_back(&edges[i]);
+		edges[i] = {weight, from, to};
+		vertices[from].forwards.push_back(i);
+		vertices[to].backwards.push_back(i);
 	}
 	return graph;
 }
@@ -64,34 +65,36 @@ read_graph_from_file(std::fstream &file)
 void
 calculate_heuristic(Graph &graph, size_t destination)
 {
-	std::set<Vertex *> visited_vertices = {};
+	std::set<size_t> visited_vertices = {};
 	std::priority_queue<QueueElement> queue;
-	QueueElement initial_element = {&graph.vertices[destination], 0.0, 0.0, nullptr};
+	QueueElement initial_element = {destination, 0.0, 0.0};
 	queue.push(initial_element);
 	graph.vertices[destination].shortest_path = 0.0;
+	auto &vertices = graph.vertices;
+	auto &edges = graph.edges;
 	while (!queue.empty()) {
 		auto element = queue.top();
-		auto vertex = element.vertex;
+		auto &vertex = vertices[element.vertex];
 		queue.pop();
-		if (visited_vertices.count(vertex)) {
+		if (visited_vertices.count(element.vertex)) {
 			continue;
 		}
 		double distance = element.path_cost;
-		visited_vertices.insert(vertex);
-		for (auto &edge : vertex->backwards) {
-			auto parent = vertex;
-			if (!visited_vertices.count(edge->from)) {
-				vertex = edge->from;
-				double path_cost = distance + edge->weight;
-				if (path_cost < vertex->shortest_path) {
-					vertex->shortest_path = path_cost;
+		visited_vertices.insert(element.vertex);
+		for (auto edge_index : vertex.backwards) {
+			auto &edge = edges[edge_index];
+			if (!visited_vertices.count(edge.from)) {
+				auto &prev_vertex = vertices[edge.from];
+				double path_cost = distance + edge.weight;
+				if (path_cost < prev_vertex.shortest_path) {
+					prev_vertex.shortest_path = path_cost;
+					prev_vertex.next = element.vertex;
+					QueueElement element = {
+						edge.from,
+						path_cost,
+						path_cost};
+					queue.push(element);
 				}
-				QueueElement element = {
-					vertex,
-					vertex->shortest_path,
-					vertex->shortest_path,
-					parent};
-				queue.push(element);
 			}
 		}
 	}
@@ -102,17 +105,18 @@ search(Graph &graph, size_t source, size_t destination, size_t k)
 {
 	std::priority_queue<QueueElement> queue;
 	auto &vertices = graph.vertices;
+	auto &edges = graph.edges;
 	QueueElement initial_element = {
-		&vertices[source],
+		source,
 		vertices[source].shortest_path,
 		0.0};
 	queue.push(initial_element);
 	while (!queue.empty()) {
 		auto element = queue.top();
-		auto vertex = element.vertex;
+		auto &vertex = vertices[element.vertex];
 		auto path_cost = element.path_cost;
 		queue.pop();
-		if (vertex == &vertices[destination]) {
+		if (element.vertex == destination) {
 			std::cout << path_cost;
 			if (k > 1) {
 				std::cout << ", ";
@@ -123,11 +127,13 @@ search(Graph &graph, size_t source, size_t destination, size_t k)
 				return;
 			}
 		}
-		for (auto const &edge : vertex->forwards) {
-			double current_path_cost = path_cost + edge->weight;
+		for (auto edge_index : vertex.forwards) {
+			auto &edge = edges[edge_index];
+			double current_path_cost = path_cost + edge.weight;
+			double heuristic = vertices[edge.to].shortest_path;
 			QueueElement element = {
-				edge->to,
-				current_path_cost + edge->to->shortest_path,
+				edge.to,
+				current_path_cost + heuristic,
 				current_path_cost};
 			queue.push(element);
 		}
@@ -157,9 +163,21 @@ main(int argc, char *argv[])
 	input_file >> k;
 	std::cout << std::setprecision(10);
 	calculate_heuristic(graph, destination);
+	/*
 	double path_cost = 0.0;
-	Vertex *vertex = graph.vertices[destination];
-	//while (vertex != graph.vertices)
+	do {
+		std::cout << source << " " << path_cost << std::endl;
+		for (auto const &edge_index : graph.vertices[source].forwards) {
+			auto &edge = graph.edges[edge_index];
+			if (edge.to == graph.vertices[source].next) {
+				path_cost += edge.weight;
+				break;
+			}
+		}
+		source = graph.vertices[source].next;
+	} while (source != destination);
+	std::cout << source << " " << path_cost << std::endl;
+	*/
 	search(graph, source, destination, k);
 	return 0;
 }
