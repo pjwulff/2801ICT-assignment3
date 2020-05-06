@@ -50,12 +50,22 @@ read_graph_from_file(std::fstream &file)
 	graph.vertices = std::vector<Vertex>(num_vertices, initial_vertex);
 	graph.edges.reserve(num_edges);
 	for (size_t i = 0; i < num_edges; ++i) {
+		bool dup = false;
 		size_t from, to;
 		double weight;
 		file >> from;
 		file >> to;
 		file >> weight;
 		edges[i] = {weight, from, to};
+		for (auto e : vertices[to].backwards) {
+			if (from == edges[e].from) {
+				dup = true;
+				break;
+			}
+		}
+		if (dup) {
+			continue;
+		}
 		vertices[from].forwards.push_back(i);
 		vertices[to].backwards.push_back(i);
 	}
@@ -163,17 +173,20 @@ main(int argc, char *argv[])
 	input_file >> k;
 	std::cout << std::setprecision(10);
 	calculate_heuristic(graph, destination);
-	/*
+/*
 	double path_cost = 0.0;
 	do {
-		std::cout << source << " " << path_cost << std::endl;
+		std::cout << source << " " << path_cost << " ";
+		double weight = 0.0;
 		for (auto const &edge_index : graph.vertices[source].forwards) {
 			auto &edge = graph.edges[edge_index];
 			if (edge.to == graph.vertices[source].next) {
-				path_cost += edge.weight;
+				weight = edge.weight;
 				break;
 			}
 		}
+		std::cout << weight << std::endl;
+		path_cost += weight;
 		source = graph.vertices[source].next;
 	} while (source != destination);
 	std::cout << source << " " << path_cost << std::endl;
