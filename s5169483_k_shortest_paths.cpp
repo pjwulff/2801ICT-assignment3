@@ -1,3 +1,4 @@
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -19,7 +20,6 @@ struct Vertex {
 	std::vector<size_t> forwards;
 	std::vector<size_t> backwards;
 	double shortest_path;
-	size_t next;
 };
 
 struct Graph {
@@ -46,26 +46,16 @@ read_graph_from_file(std::fstream &file)
 	std::vector<Edge> &edges = graph.edges;
 	file >> num_vertices;
 	file >> num_edges;
-	Vertex initial_vertex = {{}, {}, INFINITY, 0};
+	Vertex initial_vertex = {{}, {}, INFINITY};
 	graph.vertices = std::vector<Vertex>(num_vertices, initial_vertex);
 	graph.edges.reserve(num_edges);
 	for (size_t i = 0; i < num_edges; ++i) {
-		bool dup = false;
 		size_t from, to;
 		double weight;
 		file >> from;
 		file >> to;
 		file >> weight;
 		edges[i] = {weight, from, to};
-		for (auto e : vertices[to].backwards) {
-			if (from == edges[e].from) {
-				dup = true;
-				break;
-			}
-		}
-		if (dup) {
-			continue;
-		}
 		vertices[from].forwards.push_back(i);
 		vertices[to].backwards.push_back(i);
 	}
@@ -98,7 +88,6 @@ calculate_heuristic(Graph &graph, size_t destination)
 				double path_cost = distance + edge.weight;
 				if (path_cost < prev_vertex.shortest_path) {
 					prev_vertex.shortest_path = path_cost;
-					prev_vertex.next = element.vertex;
 					QueueElement element = {
 						edge.from,
 						path_cost,
@@ -172,25 +161,23 @@ main(int argc, char *argv[])
 	input_file >> destination;
 	input_file >> k;
 	std::cout << std::setprecision(10);
+	auto start_pre = std::chrono::steady_clock::now();
 	calculate_heuristic(graph, destination);
-/*
-	double path_cost = 0.0;
-	do {
-		std::cout << source << " " << path_cost << " ";
-		double weight = 0.0;
-		for (auto const &edge_index : graph.vertices[source].forwards) {
-			auto &edge = graph.edges[edge_index];
-			if (edge.to == graph.vertices[source].next) {
-				weight = edge.weight;
-				break;
-			}
-		}
-		std::cout << weight << std::endl;
-		path_cost += weight;
-		source = graph.vertices[source].next;
-	} while (source != destination);
-	std::cout << source << " " << path_cost << std::endl;
-	*/
+	auto end_pre = std::chrono::steady_clock::now();
+
+	auto start_post = std::chrono::steady_clock::now();
 	search(graph, source, destination, k);
+	auto end_post = std::chrono::steady_clock::now();
+	std::chrono::duration<double> pre_duration = end_pre - start_pre;
+	std::chrono::duration<double> post_duration = end_post - start_post;
+	std::cout << "Preprocessing time: ";
+	std::cout << 1000 * pre_duration.count();
+	std::cout << " milliseconds."<< std::endl;
+	std::cout << "Searching time: ";
+	std::cout << 1000 * post_duration.count();
+	std::cout << " milliseconds."<< std::endl;
+	std::cout << "Total time: ";
+	std::cout << 1000 * (pre_duration.count() + post_duration.count());
+	std::cout << " milliseconds."<< std::endl;
 	return 0;
 }
