@@ -1,52 +1,37 @@
 #include <chrono>
 #include <cmath>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <queue>
 #include <set>
+#include <utility>
 #include <vector>
 
 struct Vertex;
 
-/* Edges keep a record of both from which vertex they are emanating
- * and to which vertex they are going. This allows us to easily follow
- * edges backwars.
- */
 struct Edge {
 	double weight;
 	size_t from;
 	size_t to;
 };
 
-/* Similarly, vertices keep a record of both incoming and outgoing edges.
- * In the pre-processing pass we find the absolute shortest path from the
- * destination to every other node. This shortest path length is record
- * per vertex and is used as the heuristic in the A* search.
- */
 struct Vertex {
 	std::vector<size_t> forwards;
 	std::vector<size_t> backwards;
 	double shortest_path;
 };
 
-/* The graph is stored as a list of vertices and edges, where each vertex also
- * maintains a list of edges, so therefore graph is essentially an adjacency
- * list.
- */
-
 struct Graph {
 	std::vector<Vertex> vertices;
 	std::vector<Edge> edges;
 };
 
-/* A custom structure is used to simplify the queue. Each element in the queue
- * keeps track of which vertex we're currently talking about, the priority,
- * and for the A*-search, the path length so far.
- */
 struct QueueElement {
-	size_t vertex_index;
+	size_t vertex;
 	double priority;
-	double path_length;
+	double path_cost;
+	std::vector<size_t> path;
 	bool operator<(QueueElement const &other) const {
 		return priority > other.priority;
 	}
@@ -62,14 +47,9 @@ read_graph_from_file(std::fstream &file)
 	std::vector<Edge> &edges = graph.edges;
 	file >> num_vertices;
 	file >> num_edges;
-	/* Vertices are initialised with a shortest path length of `INFINITY'
-	 * in preparation of the Dijkstra's algofirthm about to be performed.
-	 * They also have empty `forwards' and `backwards' edges.
-	 */
 	Vertex initial_vertex = {{}, {}, INFINITY};
 	graph.vertices = std::vector<Vertex>(num_vertices, initial_vertex);
 	graph.edges.reserve(num_edges);
-	/* Loop over all the edges in the file. */
 	for (size_t i = 0; i < num_edges; ++i) {
 		size_t from, to;
 		double weight;
@@ -83,50 +63,37 @@ read_graph_from_file(std::fstream &file)
 	return graph;
 }
 
-/* This preprocessing stage performs Dijkstra's algorithm backwards -- that is,
- * starting at the destination and moving outwards. After this we will have
- * calculated the length of the absolute shortest path from any vertex in the
- * graph to the destination.
- */
-
 void
 calculate_heuristic(Graph &graph, size_t destination)
 {
 	std::set<size_t> visited_vertices = {};
 	std::priority_queue<QueueElement> queue;
-	/* Initially the only element in the priority queue is the destination,
-	 * as we are working backwards.
-	 */
-	QueueElement initial_element = {destination, 0.0, 0.0};
+	QueueElement initial_element = {destination, 0.0, 0.0, {}};
 	queue.push(initial_element);
 	graph.vertices[destination].shortest_path = 0.0;
 	auto &vertices = graph.vertices;
 	auto &edges = graph.edges;
 	while (!queue.empty()) {
-		/* Pop the next element off the queue. */
 		auto element = queue.top();
-		auto &vertex = vertices[element.vertex_index];
+		auto &vertex = vertices[element.vertex];
 		queue.pop();
-		/* Have we already calculated the shortest path for this vertex?
-		 * If so, skip.
-		 */
-		if (visited_vertices.count(element.vertex_index)) {
+		if (visited_vertices.count(element.vertex)) {
 			continue;
 		}
-		double distance = element.path_length;
-		visited_vertices.insert(element.vertex_index);
-		/* For every incoming edge to the current vertex. */
+		double distance = element.path_cost;
+		visited_vertices.insert(element.vertex);
 		for (auto edge_index : vertex.backwards) {
 			auto &edge = edges[edge_index];
 			if (!visited_vertices.count(edge.from)) {
 				auto &prev_vertex = vertices[edge.from];
-				double path_length = distance + edge.weight;
-				if (path_length < prev_vertex.shortest_path) {
-					prev_vertex.shortest_path = path_length;
+				double path_cost = distance + edge.weight;
+				if (path_cost < prev_vertex.shortest_path) {
+					prev_vertex.shortest_path = path_cost;
 					QueueElement element = {
 						edge.from,
-						path_length,
-						path_length};
+						path_cost,
+						path_cost,
+						{}};
 					queue.push(element);
 				}
 			}
@@ -134,40 +101,62 @@ calculate_heuristic(Graph &graph, size_t destination)
 	}
 }
 
-/* The way we calculate the k-shortest path is by performing an A*-search,
- * using the shortest path to the destination calculated in the previous
- * function as the heuristic. As this heuristic is not an approximation,
- * but is in fact exact, this is very fast.
- */
+void
+check_path(Graph &graph, std::vector<size_t> path, double path_cost)
+{
+	double path_length = 0.0;
+	for (size_t i = 0; i < (path.size() - 1); ++i) {
+		size_t cur_vertex = path[i];
+		size_t next_vertex = path[i+1];
+		auto edges = graph.vertices[cur_vertex].forwards;
+		bool found = false;
+		for (auto const &edge : edges) {
+			if (graph.edges[edge].to == next_vertex) {
+				path_length += graph.edges[edge].weight;
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			std::cerr << "ERROR!!!\n";
+			std::cerr << cur_vertex << std::endl;
+			std::cerr << next_vertex << std::endl;
+			exit(0);
+		}
+	}
+	if (path_length != path_cost) {
+		std::cerr << "PATH LENGTH DOES NOT MATCH.\n";
+		std::cerr << path_length << std::endl;
+		std::cerr << path_cost << std::endl;
+	} else {
+		for (auto const &vert : path) {
+			std::cout << vert << std::endl;
+		}
+		std::cout << "all good\n";
+	}
+}
+
 void
 search(Graph &graph, size_t source, size_t destination, size_t k)
 {
 	std::priority_queue<QueueElement> queue;
 	auto &vertices = graph.vertices;
 	auto &edges = graph.edges;
-	/* This time the first element in the priority queue is the source.
-	 * The heuristic/priority is the shortest path cost we previously
-	 * calculated, and the current path length is 0.
-	 */
 	QueueElement initial_element = {
 		source,
 		vertices[source].shortest_path,
-		0.0};
+		0.0,
+		{source}};
 	queue.push(initial_element);
 	while (!queue.empty()) {
-		/* Pop the next element off the queue. */
 		auto element = queue.top();
-		auto &vertex = vertices[element.vertex_index];
-		auto path_length = element.path_length;
+		auto &vertex = vertices[element.vertex];
+		auto path_cost = element.path_cost;
 		queue.pop();
-		/* Is the current vertex the destination? Great, we've found
-		 * another path.
-		 */
-		if (element.vertex_index == destination) {
-			std::cout << path_length;
-			/* If we still have more paths to find, subtract 1
-			 * from k and keep going. Otherwise quit early.
-			 */
+		if (element.vertex == destination) {
+			std::vector<size_t> path = element.path;
+			check_path(graph, path, path_cost);
+			std::cout << path_cost;
 			if (k > 1) {
 				std::cout << ", ";
 				k = k - 1;
@@ -177,19 +166,17 @@ search(Graph &graph, size_t source, size_t destination, size_t k)
 				return;
 			}
 		}
-		/* For every outgoing edge from the current vertex... */
 		for (auto edge_index : vertex.forwards) {
 			auto &edge = edges[edge_index];
-			double current_path_length = path_length + edge.weight;
+			double current_path_cost = path_cost + edge.weight;
 			double heuristic = vertices[edge.to].shortest_path;
-			/* Add to the priority queue. Recall that in an
-			 * A*-search the priority is the current cost +
-			 * the heuristic for the candidate node.
-			 */
+			std::vector<size_t> path = element.path;
+			path.push_back(edge.to);
 			QueueElement element = {
 				edge.to,
-				current_path_length + heuristic,
-				current_path_length};
+				current_path_cost + heuristic,
+				current_path_cost,
+				path};
 			queue.push(element);
 		}
 	}
@@ -202,7 +189,6 @@ main(int argc, char *argv[])
 	std::string filename;
 	size_t source, destination, k;
 	Graph graph;
-
 	if (argc != 2) {
 		std::cerr << "Usage: ";
 		std::cerr << argv[0] << " FILENAME" << std::endl;
@@ -213,33 +199,20 @@ main(int argc, char *argv[])
 	if (!input_file) {
 		std::cerr << "could not open input file" << std::endl;
 	}
-
-	/* Read in the graph from the file with `read_graph_from_file'. */
 	auto start_build = std::chrono::steady_clock::now();
 	graph = read_graph_from_file(input_file);
 	auto end_build = std::chrono::steady_clock::now();
-
-	/* Read in which vertices to use as source and destination, and `k'. */
 	input_file >> source;
 	input_file >> destination;
 	input_file >> k;
-
-	/* Preprocess the graph using backwards Dijkstra's to calculate the
-	 * shortest path length from every vertex to the destination. This
-	 * will be used as a heuristic in the next phase.
-	 */
+	//std::cout << std::setprecision(17);
 	auto start_pre = std::chrono::steady_clock::now();
 	calculate_heuristic(graph, destination);
 	auto end_pre = std::chrono::steady_clock::now();
 
-	/* Search the graph using an A*-search to find paths to the destination
-	 * using the heuristics previously calculated.
-	 */
 	auto start_post = std::chrono::steady_clock::now();
 	search(graph, source, destination, k);
 	auto end_post = std::chrono::steady_clock::now();
-
-	/* Output timing information to the terminal. */
 	std::chrono::duration<double> build_duration = end_build - start_build;
 	std::chrono::duration<double> pre_duration = end_pre - start_pre;
 	std::chrono::duration<double> post_duration = end_post - start_post;

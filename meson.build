@@ -17,4 +17,5 @@ project(
 executable(
     'k-short',
     's5169483_k_shortest_paths.cpp',
+    #'check.cpp',
     install: true)
