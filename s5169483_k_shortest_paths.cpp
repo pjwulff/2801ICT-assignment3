@@ -10,7 +10,7 @@ struct Vertex;
 
 /* Edges keep a record of both from which vertex they are emanating
  * and to which vertex they are going. This allows us to easily follow
- * edges backwars.
+ * edges backwards.
  */
 struct Edge {
 	double weight;
@@ -20,12 +20,12 @@ struct Edge {
 
 /* Similarly, vertices keep a record of both incoming and outgoing edges.
  * In the pre-processing pass we find the absolute shortest path from the
- * destination to every other node. This shortest path length is record
+ * destination to every other node. This shortest path length is recorded
  * per vertex and is used as the heuristic in the A* search.
  */
 struct Vertex {
-	std::vector<size_t> forwards;
-	std::vector<size_t> backwards;
+	std::vector<size_t> outgoing;
+	std::vector<size_t> incoming;
 	double shortest_path;
 };
 
@@ -77,8 +77,8 @@ read_graph_from_file(std::fstream &file)
 		file >> to;
 		file >> weight;
 		edges[i] = {weight, from, to};
-		vertices[from].forwards.push_back(i);
-		vertices[to].backwards.push_back(i);
+		vertices[from].outgoing.push_back(i);
+		vertices[to].incoming.push_back(i);
 	}
 	return graph;
 }
@@ -116,7 +116,7 @@ calculate_heuristic(Graph &graph, size_t destination)
 		double distance = element.path_length;
 		visited_vertices.insert(element.vertex_index);
 		/* For every incoming edge to the current vertex. */
-		for (auto edge_index : vertex.backwards) {
+		for (auto edge_index : vertex.incoming) {
 			auto &edge = edges[edge_index];
 			if (!visited_vertices.count(edge.from)) {
 				auto &prev_vertex = vertices[edge.from];
@@ -178,7 +178,7 @@ search(Graph &graph, size_t source, size_t destination, size_t k)
 			}
 		}
 		/* For every outgoing edge from the current vertex... */
-		for (auto edge_index : vertex.forwards) {
+		for (auto edge_index : vertex.outgoing) {
 			auto &edge = edges[edge_index];
 			double current_path_length = path_length + edge.weight;
 			double heuristic = vertices[edge.to].shortest_path;
