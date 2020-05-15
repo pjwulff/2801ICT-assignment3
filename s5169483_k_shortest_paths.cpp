@@ -30,10 +30,9 @@ struct Vertex {
 };
 
 /* The graph is stored as a list of vertices and edges, where each vertex also
- * maintains a list of edges, so therefore graph is essentially an adjacency
+ * maintains a list of edges, so therefore the graph is essentially an adjacency
  * list.
  */
-
 struct Graph {
 	std::vector<Vertex> vertices;
 	std::vector<Edge> edges;
@@ -58,8 +57,8 @@ read_graph_from_file(std::fstream &file)
 	Graph graph;
 	size_t num_vertices;
 	size_t num_edges;
-	std::vector<Vertex> &vertices = graph.vertices;
-	std::vector<Edge> &edges = graph.edges;
+	auto &vertices = graph.vertices;
+	auto &edges = graph.edges;
 	file >> num_vertices;
 	file >> num_edges;
 	/* Vertices are initialised with a shortest path length of `INFINITY'
@@ -88,20 +87,19 @@ read_graph_from_file(std::fstream &file)
  * calculated the length of the absolute shortest path from any vertex in the
  * graph to the destination.
  */
-
 void
 calculate_heuristic(Graph &graph, size_t destination)
 {
-	std::set<size_t> visited_vertices = {};
+	std::set<size_t> visited_vertices;
 	std::priority_queue<QueueElement> queue;
+	auto &vertices = graph.vertices;
+	auto &edges = graph.edges;
 	/* Initially the only element in the priority queue is the destination,
 	 * as we are working backwards.
 	 */
 	QueueElement initial_element = {destination, 0.0, 0.0};
 	queue.push(initial_element);
 	graph.vertices[destination].shortest_path = 0.0;
-	auto &vertices = graph.vertices;
-	auto &edges = graph.edges;
 	while (!queue.empty()) {
 		/* Pop the next element off the queue. */
 		auto element = queue.top();
@@ -113,11 +111,11 @@ calculate_heuristic(Graph &graph, size_t destination)
 		if (visited_vertices.count(element.vertex_index)) {
 			continue;
 		}
-		double distance = element.path_length;
 		visited_vertices.insert(element.vertex_index);
+		double distance = element.path_length;
 		/* For every incoming edge to the current vertex. */
 		for (auto edge_index : vertex.incoming) {
-			auto &edge = edges[edge_index];
+			auto const &edge = edges[edge_index];
 			if (!visited_vertices.count(edge.from)) {
 				auto &prev_vertex = vertices[edge.from];
 				double path_length = distance + edge.weight;
@@ -134,7 +132,7 @@ calculate_heuristic(Graph &graph, size_t destination)
 	}
 }
 
-/* The way we calculate the k-shortest path is by performing an A*-search,
+/* The way we calculate the k-shortest paths is by performing an A*-search,
  * using the shortest path to the destination calculated in the previous
  * function as the heuristic. As this heuristic is not an approximation,
  * but is in fact exact, this is very fast.
@@ -179,7 +177,7 @@ search(Graph &graph, size_t source, size_t destination, size_t k)
 		}
 		/* For every outgoing edge from the current vertex... */
 		for (auto edge_index : vertex.outgoing) {
-			auto &edge = edges[edge_index];
+			auto const &edge = edges[edge_index];
 			double current_path_length = path_length + edge.weight;
 			double heuristic = vertices[edge.to].shortest_path;
 			/* Add to the priority queue. Recall that in an
@@ -262,3 +260,4 @@ main(int argc, char *argv[])
 	std::cout << " milliseconds."<< std::endl;
 	return 0;
 }
+
